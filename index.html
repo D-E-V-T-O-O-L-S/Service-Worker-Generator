@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Auto Service Worker Generator</title>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; background: #f9f9f9; }
+    input, button, textarea { width: 100%; padding: 0.5rem; margin-top: 1rem; font-size: 1rem; }
+    textarea { height: 200px; }
+  </style>
+</head>
+<body>
+  <h1>🕵️ Service Worker Auto-Generator</h1>
+
+  <label>Website URL to scan:</label>
+  <input id="site-url" placeholder="https://example.com" />
+
+  <label>Cache Name:</label>
+  <input id="cache-name" placeholder="my-site-cache-v1" />
+
+  <button onclick="scanAndGenerate()">Scan & Generate</button>
+
+  <h2>🔧 Generated Service Worker:</h2>
+  <textarea id="output" readonly></textarea>
+  <button onclick="downloadSW()">⬇️ Download service-worker.js</button>
+
+  <script>
+    async function scanAndGenerate() {
+      const url = document.getElementById("site-url").value;
+      const cacheName = document.getElementById("cache-name").value || "auto-cache-v1";
+
+      try {
+        const res = await fetch(url);
+        const html = await res.text();
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+
+        const urls = new Set();
+
+        urls.add(url); // Always cache the main page
+
+        doc.querySelectorAll("script[src]").forEach(el => urls.add(new URL(el.src, url).href));
+        doc.querySelectorAll("link[rel='stylesheet']").forEach(el => urls.add(new URL(el.href, url).href));
+        doc.querySelectorAll("img[src]").forEach(el => urls.add(new URL(el.src, url).href));
+
+        const files = Array.from(urls);
+
+        const swCode = `
+// Auto-generated Service Worker
+const CACHE_NAME = "${cacheName}";
+const FILES_TO_CACHE = ${JSON.stringify(files, null, 2)};
+
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => cache.addAll(FILES_TO_CACHE))
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys().then(keyList =>
+      Promise.all(keyList.map(key => {
+        if (key !== CACHE_NAME) return caches.delete(key);
+      }))
+    )
+  );
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    caches.match(event.request).then(response => response || fetch(event.request))
+  );
+});
+        `.trim();
+
+        document.getElementById("output").value = swCode;
+
+      } catch (err) {
+        alert("⚠️ Failed to scan website. CORS error or bad URL.");
+        console.error(err);
+      }
+    }
+
+    function downloadSW() {
+      const blob = new Blob([document.getElementById("output").value], { type: "application/javascript" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "service-worker.js";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>
